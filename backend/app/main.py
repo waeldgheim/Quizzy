@@ -1,12 +1,19 @@
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI
+from app.db.db import engine, Base
+from app.models import models  # Make sure this imports all your models so tables are registered
 
+# Create all tables in the database
+Base.metadata.create_all(bind=engine)
+
+# Initialize FastAPI app
 app = FastAPI(title="Quizzy Backend")
 
-@app.get("/")
-def read_root():
-    return {"message": "Quizzy backend is running!"}
+# Health check endpoint
+@app.get("/health")
+def health_check():
+    return {"status": "ok", "message": "Backend is running"}
 
-@app.post("/upload-document/")
-async def upload_document(file: UploadFile = File(...)):
-    # For now, just return file info
-    return {"filename": file.filename, "content_type": file.content_type}
+# Example root endpoint
+@app.get("/")
+def root():
+    return {"message": "Welcome to Quizzy Backend!"}
