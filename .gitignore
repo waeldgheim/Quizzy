@@ -12,6 +12,7 @@ venv/
 *.egg-info/
 dist/
 build/
+serviceAccountKey.json
 
 # ====================
 # Node / Next.js
