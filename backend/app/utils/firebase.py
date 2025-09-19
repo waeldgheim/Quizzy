@@ -22,7 +22,7 @@ def verify_firebase_token(id_token: str):
         raise ConnectionError("Firebase Admin SDK not initialized.")
 
     try:
-        decoded_token = auth.verify_id_token(id_token)
+        decoded_token = auth.verify_id_token(id_token, clock_skew_seconds=10)
         return decoded_token
     except Exception as e:
         # Catch specific Firebase errors for better feedback if needed
