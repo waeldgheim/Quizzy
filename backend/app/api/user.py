@@ -1,10 +1,13 @@
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Response
 from sqlalchemy.orm import Session
 from firebase_admin import auth
 
 from app.db.db import get_db
 from app.services import user_service
 from app.utils import schemas
+from app.utils.firebase import verify_firebase_token
+from app.utils.security import create_access_token
+from datetime import timedelta
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -61,3 +64,63 @@ def signup(user_data: schemas.UserCreate, db: Session = Depends(get_db)):
         message="Registration successful",
         user_id=new_local_user.id
     )
+
+@router.post("/login")
+def login(token_request: schemas.TokenRequest, response: Response, db: Session = Depends(get_db)):
+    """
+    Handles user login by verifying a Firebase ID token.
+    If the token is valid, it checks if the user exists in the local DB.
+    If not, it creates them. Finally, it returns a secure, httpOnly cookie
+    containing a custom application JWT.
+    """
+    try:
+        # 1. Verify the Firebase ID token
+        firebase_user = verify_firebase_token(token_request.token)
+        firebase_uid = firebase_user["uid"]
+        user_email = firebase_user.get("email")
+
+        if not user_email:
+             raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No email associated with this Firebase account."
+            )
+
+        # 2. Check if user exists in our database, if not, create them
+        db_user = user_service.get_user_by_firebase_uid(db, firebase_uid=firebase_uid)
+        if not db_user:
+            # This handles cases where a user might exist in Firebase but not your DB
+            # e.g., social sign-in or if a DB entry was deleted manually.
+            user_data = schemas.UserCreate(
+                email=user_email,
+                username=user_email.split('@')[0], # Default username from email
+                password="N/A" # Not needed as Firebase handles auth
+            )
+            db_user = user_service.create_db_user(db=db, user_data=user_data, firebase_uid=firebase_uid)
+
+        # 3. Create our application's JWT
+        access_token_expires = timedelta(minutes=60) # Session duration
+        access_token = create_access_token(
+            data={"sub": str(db_user.id)}, expires_delta=access_token_expires
+        )
+        
+        # 4. Set the JWT in a secure, httpOnly cookie in the user's browser
+        response.set_cookie(
+            key="access_token",
+            value=f"Bearer {access_token}",
+            httponly=True, # Prevents JS access
+            samesite="lax", # or "strict"
+            secure=True, # Only sent over HTTPS
+            max_age=3600 # 1 hour
+        )
+        return {"status": "success", "user_id": db_user.id}
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e),
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An unexpected error occurred: {e}",
+        )

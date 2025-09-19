@@ -1,16 +1,32 @@
-from typing import Optional
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr
+from datetime import datetime
 
-# Schema for the user signup request body.
-# We've added the username field.
-class UserCreate(BaseModel):
-    username: str = Field(..., min_length=3, max_length=50, description="Username must be between 3 and 50 characters")
+# --- Schema for incoming Firebase ID token ---
+class TokenRequest(BaseModel):
+    token: str
+
+# --- Base schema for user data ---
+class UserBase(BaseModel):
+    username: str
     email: EmailStr
-    password: str = Field(..., min_length=6, description="Password must be at least 6 characters long")
 
-# Schema for the successful signup response.
-# The user_id will now be an integer to match your database model.
+# --- Schema for creating a new user (matches your /signup endpoint) ---
+class UserCreate(UserBase):
+    password: str
+
+# This matches the response_model in your /signup endpoint
 class SignUpResponse(BaseModel):
     success: bool
     message: str
-    user_id: Optional[int] = None
+    user_id: int
+
+# --- Schema for returning user data from the DB ---
+class UserResponse(UserBase):
+    id: int
+    firebase_uid: str
+    tier: str
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        orm_mode = True # Enables mapping from SQLAlchemy models
