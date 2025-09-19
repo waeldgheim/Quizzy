@@ -3,6 +3,11 @@
 import { useState, FormEvent } from 'react';
 import { motion } from 'framer-motion';
 import { LogIn, Mail, User, ShieldCheck } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+
+// --- NEW IMPORTS FOR FIREBASE ---
+import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+import { firebaseAuth } from '../firebase/config'; // Corrected import path
 
 // Define the shape of the API response for type safety
 interface SignUpResponse {
@@ -10,6 +15,11 @@ interface SignUpResponse {
   message: string;
   user_id?: number;
 }
+interface LoginResponse {
+    status: string;
+    user_id: number;
+}
+
 
 export default function SignUpPage() {
   // State for form fields
@@ -20,6 +30,64 @@ export default function SignUpPage() {
   // State for API interaction
   const [isLoading, setIsLoading] = useState(false);
   const [response, setResponse] = useState<SignUpResponse | null>(null);
+  const router = useRouter();
+
+
+  // --- NEW FUNCTION TO HANDLE TOKEN EXCHANGE ---
+  // This function sends the Firebase ID token to your backend's /login endpoint
+  const handleBackendLogin = async (idToken: string) => {
+    try {
+        const res = await fetch('http://127.0.0.1:8000/users/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: idToken }),
+        });
+
+        const data: LoginResponse | { detail: string } = await res.json();
+
+        if (!res.ok) {
+            const errorMessage = (data as { detail: string }).detail || 'Backend login failed.';
+            throw new Error(errorMessage);
+        }
+
+        // On successful token exchange, redirect to the dashboard
+        router.push('/dashboard'); 
+
+    } catch (error: any) {
+        setResponse({ success: false, message: error.message });
+    }
+  };
+
+
+  // --- NEW FUNCTION FOR GOOGLE SIGN-UP ---
+  const handleGoogleSignUp = async () => {
+    setIsLoading(true);
+    setResponse(null);
+    const provider = new GoogleAuthProvider();
+
+    try {
+        // 1. Trigger Firebase Google Auth popup
+        const result = await signInWithPopup(firebaseAuth, provider);
+        const user = result.user;
+
+        // 2. Get the ID Token from the successfully signed-in user
+        const idToken = await user.getIdToken();
+
+        // 3. Send the token to your backend to create a session
+        await handleBackendLogin(idToken);
+
+    } catch (error: any) {
+        // Handle errors (e.g., user closes popup)
+        let errorMessage = 'Google Sign-Up failed. Please try again.';
+        if (error.code === 'auth/popup-closed-by-user') {
+            errorMessage = 'Sign-up process was cancelled.';
+        }
+        setResponse({ success: false, message: errorMessage });
+    } finally {
+        setIsLoading(false);
+    }
+  };
+
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -61,7 +129,7 @@ export default function SignUpPage() {
         
         {/* Left Side: Illustration Placeholder */}
         <div className="hidden lg:flex flex-col items-center justify-center p-12 bg-indigo-50 rounded-l-2xl">
-           {/*  */}
+           
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -69,9 +137,9 @@ export default function SignUpPage() {
             className="w-full h-full"
           >
              <img 
-                src="https://placehold.co/600x600/4F46E5/FFFFFF?text=Quizzy&font=poppins" 
-                alt="Abstract study illustration" 
-                className="w-full h-full object-cover rounded-xl"
+               src="https://placehold.co/600x600/4F46E5/FFFFFF?text=Quizzy&font=poppins" 
+               alt="Abstract study illustration" 
+               className="w-full h-full object-cover rounded-xl"
              />
           </motion.div>
         </div>
@@ -161,7 +229,7 @@ export default function SignUpPage() {
                 className="w-full flex justify-center items-center gap-2 px-4 py-2.5 font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:bg-gray-400 transition-colors duration-300"
               >
                 <LogIn className="h-5 w-5" />
-                {isLoading ? 'Creating Account...' : 'Sign Up'}
+                {isLoading && !response ? 'Creating Account...' : 'Sign Up'}
               </button>
             </form>
             
@@ -173,15 +241,17 @@ export default function SignUpPage() {
               <div className="relative px-2 bg-white text-sm text-gray-500">OR</div>
             </div>
 
-            {/* Google Sign-in Button */}
+            {/* Google Sign-in Button --- UPDATED with onClick handler --- */}
             <button
-                type="button"
-                className="w-full flex items-center justify-center gap-3 px-4 py-2.5 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2 transition-colors duration-300"
+              type="button"
+              onClick={handleGoogleSignUp}
+              disabled={isLoading}
+              className="w-full flex items-center justify-center gap-3 px-4 py-2.5 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2 transition-colors duration-300 disabled:opacity-50"
             >
-                <svg className="h-5 w-5" viewBox="0 0 48 48" >
-                    <path fill="#FFC107" d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12s5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C12.955,4,4,12.955,4,24s8.955,20,20,20s20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z"></path><path fill="#FF3D00" d="M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"></path><path fill="#4CAF50" d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.202,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z"></path><path fill="#1976D2" d="M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.087,5.571l6.19,5.238C42.021,35.591,44,30.134,44,24C44,22.659,43.862,21.35,43.611,20.083z"></path>
-                </svg>
-                <span className="text-sm font-medium text-gray-700">Sign Up with Google</span>
+              <svg className="h-5 w-5" viewBox="0 0 48 48" >
+                  <path fill="#FFC107" d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12s5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C12.955,4,4,12.955,4,24s8.955,20,20,20s20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z"></path><path fill="#FF3D00" d="M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"></path><path fill="#4CAF50" d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.202,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z"></path><path fill="#1976D2" d="M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.087,5.571l6.19,5.238C42.021,35.591,44,30.134,44,24C44,22.659,43.862,21.35,43.611,20.083z"></path>
+              </svg>
+              <span className="text-sm font-medium text-gray-700">Sign Up with Google</span>
             </button>
 
           </motion.div>
@@ -190,4 +260,3 @@ export default function SignUpPage() {
     </div>
   );
 }
-
