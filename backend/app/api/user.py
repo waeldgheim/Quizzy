@@ -1,3 +1,5 @@
+import os
+from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException, status, Response
 from sqlalchemy.orm import Session
 from firebase_admin import auth
@@ -8,8 +10,11 @@ from app.utils import schemas
 from app.utils.firebase import verify_firebase_token
 from app.utils.security import create_access_token
 from datetime import timedelta
+from app.models.models import User
 
 router = APIRouter(prefix="/users", tags=["users"])
+# Load environment variables from .env file
+load_dotenv()
 
 @router.get("/health")
 def health_check():
@@ -78,6 +83,10 @@ def login(token_request: schemas.TokenRequest, response: Response, db: Session =
         firebase_user = verify_firebase_token(token_request.token)
         firebase_uid = firebase_user["uid"]
         user_email = firebase_user.get("email")
+        # --- UPDATED FOR GOOGLE SIGN IN ---
+        # Get display name from Firebase token, default to part of email
+        user_name = firebase_user.get("name", user_email.split('@')[0])
+
 
         if not user_email:
              raise HTTPException(
@@ -103,6 +112,8 @@ def login(token_request: schemas.TokenRequest, response: Response, db: Session =
             data={"sub": str(db_user.id)}, expires_delta=access_token_expires
         )
         
+        is_production = os.getenv("ENVIRONMENT") == "production"
+
         # 4. Set the JWT in a secure, httpOnly cookie in the user's browser
         response.set_cookie(
             key="access_token",
@@ -124,3 +135,11 @@ def login(token_request: schemas.TokenRequest, response: Response, db: Session =
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An unexpected error occurred: {e}",
         )
+
+@router.post("/logout")
+def logout(response: Response):
+    """
+    Clears the httpOnly session cookie from the user's browser.
+    """
+    response.delete_cookie(key="access_token")
+    return {"status": "success", "message": "Successfully logged out"}
