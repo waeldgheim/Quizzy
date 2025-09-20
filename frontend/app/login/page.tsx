@@ -3,11 +3,11 @@
 import { useState, FormEvent } from 'react';
 import { motion } from 'framer-motion';
 import { LogIn, Mail, ShieldCheck } from 'lucide-react';
-import { signInWithEmailAndPassword } from 'firebase/auth';
-import { firebaseAuth } from '@/app/firebase/config';
-import ForgotPasswordModal from '@/components/auth/ForgotPasswordModal'; // Import the modal
+import { signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+import { firebaseAuth } from '../firebase/config';
+import ForgotPasswordModal from '@/components/auth/ForgotPasswordModal';
+import { useRouter } from 'next/navigation';
 
-// Define the shape of our backend API response
 interface LoginApiResponse {
   status: string;
   user_id?: number;
@@ -19,9 +19,52 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const router = useRouter();
 
-  // --- NEW STATE FOR MODAL ---
   const [isForgotPasswordOpen, setIsForgotPasswordOpen] = useState(false);
+
+  const handleBackendLogin = async (idToken: string) => {
+    try {
+        const res = await fetch('http://127.0.0.1:8000/users/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: idToken }),
+        });
+
+        const data: LoginApiResponse | { detail: string } = await res.json();
+
+        if (!res.ok) {
+            const errorMessage = (data as { detail: string }).detail || 'Backend login failed.';
+            throw new Error(errorMessage);
+        }
+        setSuccess('Login successful! Redirecting...');
+        setTimeout(() => router.push('/dashboard'), 1000);
+
+    } catch (error: any) {
+        setError(error.message);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setIsLoading(true);
+    setError(null);
+    const provider = new GoogleAuthProvider();
+
+    try {
+        const result = await signInWithPopup(firebaseAuth, provider);
+        const user = result.user;
+        const idToken = await user.getIdToken();
+        await handleBackendLogin(idToken);
+    } catch (error: any) {
+        let errorMessage = 'Google Sign-In failed. Please try again.';
+        if (error.code === 'auth/popup-closed-by-user') {
+            errorMessage = 'Sign-in process was cancelled.';
+        }
+        setError(errorMessage);
+    } finally {
+        setIsLoading(false);
+    }
+  };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -30,31 +73,10 @@ export default function LoginPage() {
     setSuccess(null);
 
     try {
-      // 1. Sign in with Firebase Client SDK
       const userCredential = await signInWithEmailAndPassword(firebaseAuth, email, password);
       const user = userCredential.user;
-
-      // 2. Get the Firebase ID token
       const idToken = await user.getIdToken();
-
-      // 3. Send the ID token to our FastAPI backend
-      const res = await fetch('http://127.0.0.1:8000/users/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: idToken }),
-      });
-
-      const data: LoginApiResponse | { detail: string } = await res.json();
-
-      if (!res.ok) {
-        const errorMessage = (data as { detail: string }).detail || 'An unexpected error occurred during login.';
-        throw new Error(errorMessage);
-      }
-      
-      setSuccess('Login successful! Redirecting...');
-      // Optionally, redirect the user
-      // setTimeout(() => window.location.href = '/dashboard', 1000);
-
+      await handleBackendLogin(idToken);
     } catch (error: any) {
       setError(error.message || 'Failed to login. Please check your credentials.');
     } finally {
@@ -67,7 +89,6 @@ export default function LoginPage() {
       <div className="min-h-screen w-full bg-gray-50 flex items-center justify-center font-sans">
         <div className="grid grid-cols-1 lg:grid-cols-2 w-full max-w-6xl mx-auto">
           
-          {/* Left Side: Illustration Placeholder */}
           <div className="hidden lg:flex flex-col items-center justify-center p-12 bg-indigo-50 rounded-l-2xl">
             <motion.img 
                 initial={{ opacity: 0, scale: 0.9 }}
@@ -79,7 +100,6 @@ export default function LoginPage() {
             />
           </div>
 
-          {/* Right Side: Login Form */}
           <div className="flex items-center justify-center p-8">
             <motion.div
               initial={{ opacity: 0, x: 50 }}
@@ -97,7 +117,6 @@ export default function LoginPage() {
                 </p>
               </div>
 
-              {/* Response Message Display */}
               {error && (
                 <motion.div
                   initial={{ opacity: 0, y: -10 }}
@@ -118,7 +137,6 @@ export default function LoginPage() {
               )}
 
               <form onSubmit={handleSubmit} className="space-y-4">
-                {/* Email and Password Fields... (no changes here) */}
                 <div className="relative">
                   <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
                   <input
@@ -136,7 +154,6 @@ export default function LoginPage() {
                   />
                 </div>
                 
-                {/* --- FORGOT PASSWORD LINK --- */}
                 <div className="text-right">
                     <button
                         type="button"
@@ -147,7 +164,6 @@ export default function LoginPage() {
                     </button>
                 </div>
 
-                {/* Submit Button */}
                 <button
                   type="submit"
                   disabled={isLoading}
@@ -157,12 +173,31 @@ export default function LoginPage() {
                   {isLoading ? 'Signing In...' : 'Sign In'}
                 </button>
               </form>
+
+              <div className="relative flex items-center justify-center">
+                  <div className="absolute inset-0 flex items-center">
+                      <div className="w-full border-t border-gray-300" />
+                  </div>
+                  <div className="relative px-2 bg-white text-sm text-gray-500">OR</div>
+              </div>
+
+              <button
+                  type="button"
+                  onClick={handleGoogleSignIn}
+                  disabled={isLoading}
+                  className="w-full flex items-center justify-center gap-3 px-4 py-2.5 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2 transition-colors duration-300 disabled:opacity-50"
+              >
+                  <svg className="h-5 w-5" viewBox="0 0 48 48" >
+                      <path fill="#FFC107" d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12s5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C12.955,4,4,12.955,4,24s8.955,20,20,20s20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z"></path><path fill="#FF3D00" d="M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"></path><path fill="#4CAF50" d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.202,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z"></path><path fill="#1976D2" d="M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.087,5.571l6.19,5.238C42.021,35.591,44,30.134,44,24C44,22.659,43.862,21.35,43.611,20.083z"></path>
+                  </svg>
+                  <span className="text-sm font-medium text-gray-700">Sign In with Google</span>
+              </button>
+
             </motion.div>
           </div>
         </div>
       </div>
       
-      {/* --- RENDER THE MODAL --- */}
       <ForgotPasswordModal 
         isOpen={isForgotPasswordOpen}
         onClose={() => setIsForgotPasswordOpen(false)}
