@@ -17,6 +17,7 @@ const config: Config = {
       // You can add your custom colors from the style guide here
       colors: {
         indigo: {
+          '100': '#E0E7FF',
           '600': '#4F46E5',
           '700': '#4338CA',
         },
