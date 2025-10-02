@@ -17,7 +17,7 @@ export default function HomePage() {
           whileTap={{ scale: 0.95 }}
           className="px-5 py-2 text-sm font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors"
         >
-          Login
+          Log In
         </motion.button>
       </Link>
       <Link href="/signup">
